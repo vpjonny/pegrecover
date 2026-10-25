@@ -105,13 +105,19 @@ struct RecoveryClaim {
 
 enum OwnerScheme { NONE, SALT_IS_KECCAK_OF_INITIAL_OWNER }
 
-function setZkFactoryScheme(address factory, OwnerScheme scheme) external; // onlyOwner
-function zkFactoryScheme(address factory) external view returns (OwnerScheme);
+struct FactoryScheme {
+    OwnerScheme scheme;             // NONE = not registered
+    bytes32 bytecodeHash;           // the only account bytecode hash accepted for this factory
+    bytes32 constructorInputHash;   // keccak256 of the only constructorInput accepted for this factory
+}
+
+function setZkFactoryScheme(address factory, OwnerScheme scheme, bytes32 bytecodeHash, bytes32 constructorInputHash) external; // onlyOwner; scheme NONE clears the entry
+function zkFactoryScheme(address factory) external view returns (OwnerScheme scheme, bytes32 bytecodeHash, bytes32 constructorInputHash);
 function recoveryNonce(address stranded) external view returns (uint256);
 function recoverStrandedZkAccount(ZkDeployment calldata d, RecoveryClaim calldata c, bytes calldata signature) external;
 function zkCreate2Address(ZkDeployment calldata d) external pure returns (address);
 
-event ZkFactorySchemeSet(address indexed factory, OwnerScheme scheme);
+event ZkFactorySchemeSet(address indexed factory, OwnerScheme scheme, bytes32 bytecodeHash, bytes32 constructorInputHash);
 event StrandedZkAccountRecovered(address indexed stranded, address indexed signer, address indexed to, uint256 amount, address factory);
 ```
 
@@ -165,7 +171,9 @@ digest     = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash)
 
 ### 5.4 OwnerScheme registry
 
-`zkFactoryScheme(factory)` maps a ZK Stack factory address to the rule that binds its CREATE2 salt to the deployed account's initial owner. The registry is written only by `setZkFactoryScheme` (`onlyOwner`) and starts empty; every factory is `NONE` until the token owner registers it. A claim whose `d.factory` maps to `NONE` MUST revert.
+`zkFactoryScheme(factory)` maps a ZK Stack factory address to a `FactoryScheme`: the rule that binds its CREATE2 salt to the deployed account's initial owner, plus the one account `bytecodeHash` and the one `keccak256(constructorInput)` the factory uses. The registry is written only by `setZkFactoryScheme` (`onlyOwner`) and starts empty; every factory is `NONE` until the token owner registers it. A claim whose `d.factory` maps to `NONE`, whose `d.bytecodeHash` differs from the pinned hash, or whose `keccak256(d.constructorInput)` differs from the pinned hash MUST revert. Pinning leaves the salt as the only claim input not fixed by the registry, and the salt is the hash of the signer, so a claimant can only ever name the address they would own under that factory.
+
+For the AGW `AccountFactory` the pinned values are `bytecodeHash = 0x0100003316a98e88b9e8931575675eed8e30eee97abeff3816fb98333ab085bc` and `constructorInputHash = keccak256(abi.encode(address(0xaa3633b417483f932969edaef7cc4f1068f6faa9)))`, read from the account deployments in §4.1 and §5.4.
 
 The one scheme defined by this proposal is `SALT_IS_KECCAK_OF_INITIAL_OWNER`: the factory derives the salt as `keccak256(abi.encodePacked(initialOwner))` where `initialOwner` is the account's initial signing key. The AGW `AccountFactory` `0x9b947df68d35281c972511b3e7bc875926f26c1a` follows this scheme; it was verified against two deployed AGWs (§4.1 case A and a second account whose owner `0x349e6c340625a76f9c7ef76ed826e66cbd5bd7b4` and salt `0x83110841e6184847ecdb526795e56824ed672100843d4bbb7e5365aa7ea81e10` reproduce `0xDb85b9035a02E0cB60bDd33655612930Ab414838`, creation tx `0x61214b7bd7184b0de73d2f9c9b506eafdf295c92c78970d776b4c131f5980367` block 89,579). Whether the factory contract enforces this derivation on-chain or whether only the AGW SDK computes it is unmeasured; the registry entry is the token owner's statement that the scheme holds for the factory, and §8 discusses what a wrong entry would mean.
 
@@ -173,14 +181,14 @@ Factories with other owner-binding rules need a new enum member and a new verifi
 
 ### 5.5 Verification steps
 
-`recoverStrandedZkAccount(d, c, signature)` MUST perform the following checks in this order and revert on the first failure:
+`recoverStrandedZkAccount(d, c, signature)` MUST perform all of the following checks and revert if any fails. The order below is the reference implementation's order of effects; implementations MAY reorder pure checks as long as the nonce is consumed only when the whole claim succeeds (a reverted call consumes nothing):
 
 1. `block.timestamp <= c.deadline`.
 2. `c.nonce == recoveryNonce[c.stranded]`.
 3. `c.to != address(0)`.
 4. `c.stranded` has no code on BSC: `extcodesize(c.stranded) == 0` (see §5.7).
 5. `zkCreate2Address(d) == c.stranded`.
-6. `zkFactoryScheme[d.factory] != NONE`.
+6. `zkFactoryScheme[d.factory].scheme != NONE`, `d.bytecodeHash == zkFactoryScheme[d.factory].bytecodeHash`, and `keccak256(d.constructorInput) == zkFactoryScheme[d.factory].constructorInputHash`.
 7. Recover `signer` from `signature` over the digest of §5.3; `signer != address(0)`, canonical `s`, `v ∈ {27, 28}`.
 8. For `SALT_IS_KECCAK_OF_INITIAL_OWNER`: `d.salt == keccak256(abi.encodePacked(signer))`.
 9. `amount = c.amount == 0 ? balanceOf(c.stranded) : c.amount`; `amount > 0`; `amount <= balanceOf(c.stranded)`.
@@ -204,7 +212,7 @@ The caller of `recoverStrandedZkAccount` is unrestricted. The signature fixes `s
 
 ### 5.9 Events
 
-- `ZkFactorySchemeSet(factory, scheme)` on every `setZkFactoryScheme` call, including resets to `NONE`.
+- `ZkFactorySchemeSet(factory, scheme, bytecodeHash, constructorInputHash)` on every `setZkFactoryScheme` call, including resets to `NONE`.
 - `StrandedZkAccountRecovered(stranded, signer, to, amount, factory)` on every successful recovery, in addition to the standard `Transfer(stranded, to, amount)`.
 
 ## 6. Rationale
@@ -229,7 +237,7 @@ The V2 implementation MUST keep the original variable order and types and MUST b
 
 ## 8. Security Considerations
 
-**A tuple hashing to an existing address proves ZK origin, not ownership.** Anyone can produce the tuple for any ZK Stack account from the chain's public data. The address check (§5.5 step 5) establishes only that the address is the ZKsync-CREATE2 output of that factory with that salt. Ownership is established only by step 8 together with step 7: the salt is the hash of the recovered signer. Producing a tuple that hashes to an existing funded address with a salt the attacker controls requires a 160-bit preimage of keccak256 and is treated as infeasible, the same assumption EVM CREATE2 relies on.
+**A tuple hashing to an existing address proves ZK origin, not ownership.** Anyone can produce the tuple for any ZK Stack account from the chain's public data. The address check (§5.5 step 5) establishes only that the address is the ZKsync-CREATE2 output of that factory with that salt. Ownership is established only by step 8 together with step 7: the salt is the hash of the recovered signer. With the factory's `bytecodeHash` and `constructorInputHash` pinned in the registry (§5.4), the salt is the only input a claimant chooses, and step 8 fixes it to the hash of their own key; the set of addresses any one key can ever claim under a factory therefore has exactly one member. Without pinning an attacker could vary the bytecode hash and constructor input freely and grind for any funded address, a multi-target search that is still a keccak256 preimage problem but with a smaller security margin; pinning removes that surface entirely.
 
 **Owner rotation.** An AGW's k1 owner can be changed after deployment. The salt binds the initial owner only. If the key was rotated, the initial owner can still claim and the current owner cannot. For the §4.1 case the current owner on Abstract is unmeasured. This is a known limit, not a defect of the proof: the token contract cannot read Abstract state, and the initial owner is the only owner that is provable from the address alone.
 
@@ -241,7 +249,7 @@ The V2 implementation MUST keep the original variable order and types and MUST b
 
 **Phishing of claim signatures.** A claim is a plain EIP-712 message that a wallet will display with the type name `RecoveryClaim`, the stranded address, the destination, the amount and the deadline. A user who signs a `RecoveryClaim` presented by a malicious site with the attacker's `to` loses the stranded balance to the attacker. The exposure is limited to balances at the user's own stranded addresses (step 8 ties the claim to the signer), it cannot reach the signer's ordinary balances, and the message is readable. Wallet vendors SHOULD show `RecoveryClaim` fields verbatim.
 
-**Registry governance.** `setZkFactoryScheme` is held by the token owner, the same key that can already `mint`. Registering a factory under `SALT_IS_KECCAK_OF_INITIAL_OWNER` when that factory does not in fact derive the salt from the initial owner would let whoever chose the salt on the ZK Stack chain claim BSC balances of an account they do not control on that chain. For the AGW factory the derivation was verified on two accounts but whether the factory enforces it on-chain is unmeasured; the token owner SHOULD read the factory source before registering it. A wrong entry can be reset to `NONE`. The registry adds no power over non-stranded balances: step 4 excludes every address with code, and steps 5 and 8 exclude every address that is not the ZK-CREATE2 output of the registered factory with the signer's hash as salt.
+**Registry governance.** `setZkFactoryScheme` is held by the token owner, the same key that can already `mint`. Registering a factory under `SALT_IS_KECCAK_OF_INITIAL_OWNER` when that factory does not in fact derive the salt from the initial owner would let whoever chose the salt on the ZK Stack chain claim BSC balances of an account they do not control on that chain. For the AGW factory the derivation was verified on two accounts but whether the factory enforces it on-chain is unmeasured; the token owner SHOULD read the factory source before registering it. A wrong entry can be reset to `NONE`. The registry adds no power over non-stranded balances: step 4 excludes every address with code, and steps 5, 6 and 8 exclude every address that is not the ZK-CREATE2 output of the registered factory with its pinned bytecode and constructor input and the signer's hash as salt. A registry entry with a wrong pinned hash simply makes claims for that factory revert.
 
 **Deadline.** A signed claim that is not relayed stays valid until `deadline`. Signers SHOULD set a short deadline; the signature is otherwise a bearer instruction to move the stranded balance to `to`.
 
