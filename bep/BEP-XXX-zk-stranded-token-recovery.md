@@ -185,7 +185,7 @@ Factories with other owner-binding rules need a new enum member and a new verifi
 
 1. `block.timestamp <= c.deadline`.
 2. `c.nonce == recoveryNonce[c.stranded]`.
-3. `c.to != address(0)`.
+3. `c.to != address(0)`, `c.to != c.stranded`, `c.to != address(this)` (the last two would strand the balance again).
 4. `c.stranded` has no code on BSC: `extcodesize(c.stranded) == 0` (see §5.7).
 5. `zkCreate2Address(d) == c.stranded`.
 6. `zkFactoryScheme[d.factory].scheme != NONE`, `d.bytecodeHash == zkFactoryScheme[d.factory].bytecodeHash`, and `keccak256(d.constructorInput) == zkFactoryScheme[d.factory].constructorInputHash`.
@@ -196,11 +196,11 @@ Factories with other owner-binding rules need a new enum member and a new verifi
 11. `_transfer(c.stranded, c.to, amount)` — the existing internal transfer, which emits the standard `Transfer(c.stranded, c.to, amount)` event and keeps `totalSupply` unchanged.
 12. `emit StrandedZkAccountRecovered(c.stranded, signer, c.to, amount, d.factory)`.
 
-Steps 4–8 are pure state reads and hashing; the function makes no external calls.
+Steps 4–8 are pure state reads and hashing; the function calls no other contract (the reference implementation reads its own `name()` and `balanceOf()` through two self STATICCALLs).
 
 ### 5.6 Nonce and deadline
 
-`recoveryNonce` is per stranded address and increments by one per successful recovery. A claim signed for a nonce that has been consumed can never execute again. A partial claim (`c.amount` less than the balance) consumes the nonce; the remainder needs a new claim at the next nonce. `deadline` bounds how long a signed claim stays executable if it is not relayed.
+`recoveryNonce` is per stranded address and increments by one per successful recovery. A claim signed for a nonce that has been consumed can never execute again. A partial claim (`c.amount` less than the balance) consumes the nonce; the remainder needs a new claim at the next nonce. `deadline` bounds how long a signed claim stays executable if it is not relayed. Two consequences signers and wallet software MUST account for: a claim with `amount == 0` moves whatever balance the stranded address holds at execution, including deposits that arrive after signing, so a full-balance claim is a bearer sweep until `deadline`; and the token owner can make an outstanding claim unexecutable by clearing the factory's registry entry and executable again by restoring it, since the signature and nonce are unaffected by the registry. Short deadlines limit both.
 
 ### 5.7 Code-less requirement
 
@@ -253,7 +253,7 @@ The V2 implementation MUST keep the original variable order and types and MUST b
 
 **Deadline.** A signed claim that is not relayed stays valid until `deadline`. Signers SHOULD set a short deadline; the signature is otherwise a bearer instruction to move the stranded balance to `to`.
 
-**Reentrancy and external calls.** The function makes no external calls; `_transfer` is the existing internal bookkeeping. The nonce is incremented before the transfer.
+**Reentrancy and external calls.** The function calls no other contract (two STATICCALLs to itself only); `_transfer` is the existing internal bookkeeping. The nonce is incremented before the transfer.
 
 **Upgrade risk.** The usual EIP-1967 upgrade risks apply: the proxy admin key (`0xd2f9…d6c4`, an EOA) can point the proxy at any implementation. This proposal does not change that; it specifies what the next implementation should contain.
 

@@ -42,8 +42,10 @@ cheap guard; the rest is Info.
 
 ### L-2 (Low) — `to` may be the token proxy itself (or any other contract); funds are then unrecoverable
 
+**RESOLVED 2026-10-26:** guard added, `require(c.to != c.stranded && c.to != address(this), "V2: bad destination")`; PoCs rewritten as `test_review_toEqualsStrandedRejected` / `test_review_toEqualsProxyRejected`, 70/70 passing on srv1w. `to` = another arbitrary contract remains the signer's responsibility.
+
 - Location: `recoverStrandedZkAccount` → `_transfer(c.stranded, c.to, amount)`; only `to != 0` is enforced.
-- PoC: `test_review_toEqualsProxyStrandsAgain` — a claim with `to = proxy` succeeds; the proxy has code so
+- PoC (pre-fix): `test_review_toEqualsProxyStrandsAgain` — a claim with `to = proxy` succeeded; the proxy has code so
   it can never itself be a recovery subject. Also `test_review_toEqualsStrandedIsNoopButConsumesNonce`
   (`to == stranded`: no-op that consumes a nonce and emits `Transfer(s, s, amt)`).
 - Fix (optional, one line): `require(c.to != address(this) && c.to != c.stranded, "V2: bad destination")`.

@@ -186,6 +186,8 @@ contract BEP20TokenImplementationV2 is BEP20TokenImplementation {
             amount = this.balanceOf(c.stranded);
         }
         require(amount > 0, "V2: nothing to recover");
+        // a destination equal to the stranded address or to this token would strand the balance again
+        require(c.to != c.stranded && c.to != address(this), "V2: bad destination");
 
         // inherited V1 internal: checks sender/recipient != 0, balance >= amount, emits Transfer
         _transfer(c.stranded, c.to, amount);

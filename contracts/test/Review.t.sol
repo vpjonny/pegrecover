@@ -319,26 +319,25 @@ contract ReviewUnitTest is RecoveryBase {
     }
 
     /// to == stranded: consumes a nonce, emits Transfer(s, s, amt), moves nothing. Signer's own choice.
-    function test_review_toEqualsStrandedIsNoopButConsumesNonce() public {
+    function test_review_toEqualsStrandedRejected() public {
         IV2.RecoveryClaim memory c = _claim(0, 0);
         c.to = stranded;
         bytes memory sig = signClaim(token, c, freshPk);
-        vm.expectEmit(true, true, true, true, proxy);
-        emit IV2.Transfer(stranded, stranded, STRANDED_AMOUNT);
+        vm.expectRevert(bytes("V2: bad destination"));
         token.recoverStrandedZkAccount(agwDeployment(strandedSalt), c, sig);
         assertEq(token.balanceOf(stranded), STRANDED_AMOUNT);
-        assertEq(token.recoveryNonce(stranded), 1);
+        assertEq(token.recoveryNonce(stranded), 0);
     }
 
-    /// to == the token proxy: funds become unrecoverable (no path out of the proxy). Signer's own choice;
-    /// a wallet UI should warn. Documented as Low.
-    function test_review_toEqualsProxyStrandsAgain() public {
+    /// to == the token proxy: rejected by the destination guard (would strand the balance again).
+    function test_review_toEqualsProxyRejected() public {
         IV2.RecoveryClaim memory c = _claim(0, 0);
         c.to = proxy;
         bytes memory sig = signClaim(token, c, freshPk);
+        vm.expectRevert(bytes("V2: bad destination"));
         token.recoverStrandedZkAccount(agwDeployment(strandedSalt), c, sig);
-        assertEq(token.balanceOf(proxy), STRANDED_AMOUNT);
-        // the proxy has code, so it can never be a recover() subject
+        assertEq(token.balanceOf(proxy), 0);
+        // the proxy has code, so it can never be a recover() subject either
         IV2.RecoveryClaim memory c2 = _claim(0, 0);
         c2.stranded = proxy;
         bytes memory sig2 = signClaim(token, c2, freshPk);

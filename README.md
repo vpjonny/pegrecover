@@ -18,7 +18,7 @@ Binance-Peg USDC at `0x6ae0145e60b073e8c47b922f16c0f9e71e3efa86`, unmoved since 
 | `bep/BEP-XXX-zk-stranded-token-recovery.md` | the BEP draft, in the `bnb-chain/BEPs` format (BEP-1) |
 | `bep/PROOF-PACK-0x6ae0.md` | case file for the worked example, for Binance support/engineering and the holder |
 | `bep/PR-DESCRIPTION.md` | PR body for `bnb-chain/BEPs` |
-| `contracts/` | Foundry project: `BEP20TokenImplementationV2` + `ZkCreate2` library, 46 tests incl. BSC mainnet fork upgrade tests; `README.md`, `GAS.md`, `REVIEW.md` |
+| `contracts/` | Foundry project: `BEP20TokenImplementationV2` + `ZkCreate2` library, 70 tests (46 implementation + 24 review PoCs) incl. BSC mainnet fork upgrade tests; `README.md`, `GAS.md`, `REVIEW.md` |
 | `research/ZK_ACCOUNT_SCHEMES.md` | which ZK Stack account factories bind the owner into the salt |
 
 ## How the recovery works
@@ -39,10 +39,10 @@ ever claim the one address it would own under that factory.
 ```
 cd contracts
 forge build
-forge test            # 46 tests; the 9 fork tests need the `bsc` RPC alias in foundry.toml (archive node)
+forge test            # 70 tests; the 12 fork tests need the `bsc` RPC alias in foundry.toml (archive node)
 ```
 
-Last full run: 2026-10-26 on srv1w, forge 1.8.3, `46 tests passed, 0 failed`, fork block 129782171.
+Last full run: 2026-10-26 on srv1w, forge 1.8.3, `70 tests passed, 0 failed`, fork block 129782171.
 See `contracts/README.md` for the verbatim transcript, storage-layout diff and the upgrade procedure.
 
 ## Status

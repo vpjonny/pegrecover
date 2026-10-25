@@ -157,3 +157,6 @@ ZkCreate2Test:test_prefixIsKeccakOfZksyncCreate2() (gas: 3073)```
   gas: relayer->proxy recoverStrandedZkAccount (full balance, local): 119575
   gas: relayer->proxy recoverStrandedZkAccount (full balance, fork): 119496
 ```
+
+
+_Note 2026-10-26: figures above were measured before the destination guard (`c.to != c.stranded && c.to != address(this)`) was added; the guard adds two calldata comparisons, a few tens of gas, and was not re-measured._

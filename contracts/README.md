@@ -52,7 +52,7 @@ event StrandedZkAccountRecovered(address indexed stranded, address indexed signe
 Revert strings, in check order: `V2: factory not registered`, `V2: bytecode hash not pinned for factory`,
 `V2: constructor input not pinned for factory`, `V2: derivation mismatch`, `V2: stranded address has code`,
 `V2: claim expired`, `V2: bad nonce`, `V2: bad signature length`, `V2: bad signature s`, `V2: bad signature v`,
-`V2: zero signer`, `V2: signer is not the initial owner`, `V2: nothing to recover`,
+`V2: zero signer`, `V2: signer is not the initial owner`, `V2: nothing to recover`, `V2: bad destination` (to == stranded or to == token),
 `BEP20: transfer amount exceeds balance` (from V1 `_transfer`).
 
 **AGW factory pin (measured):** factory `0x9B947df68D35281C972511B3E7BC875926f26C1A`,
