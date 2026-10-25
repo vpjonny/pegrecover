@@ -15,7 +15,7 @@ Binance-Peg USDC at `0x6ae0145e60b073e8c47b922f16c0f9e71e3efa86`, unmoved since 
 | path | what |
 | --- | --- |
 | `FACTS.md` | every on-chain number used anywhere in this repo, with how it was read |
-| `bep/BEP-XXX-zk-stranded-token-recovery.md` | the BEP draft, in the `bnb-chain/BEPs` format (BEP-1) |
+| `bep/BEP-730-zk-stranded-token-recovery.md` | the BEP draft, in the `bnb-chain/BEPs` format (BEP-1) |
 | `bep/PROOF-PACK-0x6ae0.md` | case file for the worked example, for Binance support/engineering and the holder |
 | `bep/PR-DESCRIPTION.md` | PR body for `bnb-chain/BEPs` |
 | `contracts/` | Foundry project: `BEP20TokenImplementationV2` + `ZkCreate2` library, 70 tests (46 implementation + 24 review PoCs) incl. BSC mainnet fork upgrade tests; `README.md`, `GAS.md`, `REVIEW.md` |

@@ -1,6 +1,6 @@
-## BEP-XXX: Recovery of Binance-Peg BEP20 tokens stranded at ZK Stack-derived smart-account addresses
+## BEP-730: Recovery of Binance-Peg BEP20 tokens stranded at ZK Stack-derived smart-account addresses
 
-New Standards BEP, status Draft. The number is a placeholder; per BEP-1 it takes this PR's number on merge, and the file should be renamed `BEPs/BEP-<number>.md` with the headings updated. Editors may judge that a token-implementation change belongs under `BAPs/`; the document is laid out so it can move there unchanged apart from the prefix.
+New Standards BEP, status Draft, numbered after this PR (#730). Editors may judge that a token-implementation change belongs under `BAPs/`; the document is laid out so it can move there unchanged apart from the prefix.
 
 ### What it proposes
 
@@ -12,7 +12,7 @@ Worked case: BSC tx `0x512b66bef7392f9d1dd8fc3a9ee9234bd87dfdb7b0cd5c0395010f657
 
 ### Files
 
-- `BEPs/BEP-XXX-zk-stranded-token-recovery.md` — the draft.
+- `BEPs/BEP-730.md` — the draft.
 - Reference implementation and tests: <https://github.com/vpjonny/pegrecover/tree/master/contracts>, built on the vendored `bnb-chain/canonical-upgradeable-bep20` sources; 70 tests incl. BSC mainnet fork upgrade tests, plus an independent review (`contracts/REVIEW.md`).
 - Case file for the worked example: <https://github.com/vpjonny/pegrecover/blob/master/bep/PROOF-PACK-0x6ae0.md>.
 
