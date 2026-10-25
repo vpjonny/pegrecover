@@ -34,8 +34,7 @@ contract RecoveryUnitTest is RecoveryBase {
         vm.prank(proxyAdmin);
         ITransparentUpgradeableProxy(proxy).upgradeTo(v2);
 
-        vm.prank(tokenOwner);
-        token.setZkFactoryScheme(Facts.AGW_FACTORY, IV2.OwnerScheme.SALT_IS_KECCAK_OF_INITIAL_OWNER);
+        registerAgw(token, tokenOwner);
 
         (freshOwner, freshPk) = makeAddrAndKey("fresh initial owner");
         (stranded, strandedSalt) = agwAddressFor(freshOwner);
@@ -62,8 +61,15 @@ contract RecoveryUnitTest is RecoveryBase {
         assertEq(token.balanceOf(tokenOwner), INITIAL_SUPPLY - STRANDED_AMOUNT);
         assertEq(token.balanceOf(stranded), STRANDED_AMOUNT);
         assertEq(address(uint160(uint256(vm.load(address(token), Facts.EIP1967_IMPL_SLOT)))), v2);
-        assertEq(uint8(token.zkFactoryScheme(Facts.AGW_FACTORY)), uint8(IV2.OwnerScheme.SALT_IS_KECCAK_OF_INITIAL_OWNER));
+        assertAgwRegistered(token);
         assertEq(token.recoveryNonce(stranded), 0);
+    }
+
+    function test_pinnedConstructorInputHashIsKeccakOfEncodedImpl() public pure {
+        assertEq(keccak256(abi.encode(Facts.AGW_IMPL)), Facts.AGW_CONSTRUCTOR_INPUT_HASH);
+        assertEq(keccak256(Facts.agwConstructorInput()), Facts.AGW_CONSTRUCTOR_INPUT_HASH);
+        // the prefix the BEP writer measured
+        assertEq(bytes4(Facts.AGW_CONSTRUCTOR_INPUT_HASH), bytes4(0x7dc432c8));
     }
 
     function test_domainAndDigestMatchEip712() public view {
@@ -144,19 +150,62 @@ contract RecoveryUnitTest is RecoveryBase {
     }
 
     function test_revert_schemeClearedToNone() public {
+        vm.expectEmit(true, false, false, true, address(token));
+        emit IV2.ZkFactorySchemeSet(Facts.AGW_FACTORY, IV2.OwnerScheme.NONE, bytes32(0), bytes32(0));
         vm.prank(tokenOwner);
-        token.setZkFactoryScheme(Facts.AGW_FACTORY, IV2.OwnerScheme.NONE);
+        token.setZkFactoryScheme(Facts.AGW_FACTORY, IV2.OwnerScheme.NONE, Facts.AGW_BYTECODE_HASH, Facts.AGW_CONSTRUCTOR_INPUT_HASH);
+        (IV2.OwnerScheme sch, bytes32 bh, bytes32 cih) = token.zkFactoryScheme(Facts.AGW_FACTORY);
+        assertEq(uint8(sch), uint8(IV2.OwnerScheme.NONE));
+        assertEq(bh, bytes32(0));
+        assertEq(cih, bytes32(0));
         IV2.RecoveryClaim memory c = _claim(0, 0);
         bytes memory sig = signClaim(token, c, freshPk);
         vm.expectRevert(bytes("V2: factory not registered"));
         token.recoverStrandedZkAccount(agwDeployment(strandedSalt), c, sig);
     }
 
+    function test_revert_wrongBytecodeHash() public {
+        IV2.ZkDeployment memory d = agwDeployment(strandedSalt);
+        d.bytecodeHash = keccak256("some other account bytecode");
+        IV2.RecoveryClaim memory c = _claim(0, 0);
+        bytes memory sig = signClaim(token, c, freshPk);
+        vm.expectRevert(bytes("V2: bytecode hash not pinned for factory"));
+        token.recoverStrandedZkAccount(d, c, sig);
+    }
+
+    function test_revert_wrongConstructorInput() public {
+        IV2.ZkDeployment memory d = agwDeployment(strandedSalt);
+        d.constructorInput = abi.encode(makeAddr("other impl"));
+        IV2.RecoveryClaim memory c = _claim(0, 0);
+        bytes memory sig = signClaim(token, c, freshPk);
+        vm.expectRevert(bytes("V2: constructor input not pinned for factory"));
+        token.recoverStrandedZkAccount(d, c, sig);
+    }
+
+    function test_revert_pinnedInputsCannotRetargetAnotherDerivedAddress() public {
+        // A claimant who controls key K can only ever reach zkCreate2(factory, keccak(K), pinnedHash, pinnedInput).
+        // Try to aim K's signature at a different AGW-style address by varying the constructor input.
+        (address victimOwner,) = makeAddrAndKey("victim initial owner");
+        (address victim,) = agwAddressFor(victimOwner);
+        vm.prank(tokenOwner);
+        token.transfer(victim, 10e18);
+        IV2.RecoveryClaim memory c = _claim(0, 0);
+        c.stranded = victim;
+        bytes memory sig = signClaim(token, c, freshPk);
+        IV2.ZkDeployment memory d = agwDeployment(strandedSalt);
+        d.constructorInput = abi.encode(victimOwner); // arbitrary unpinned input
+        vm.expectRevert(bytes("V2: constructor input not pinned for factory"));
+        token.recoverStrandedZkAccount(d, c, sig);
+        d = agwDeployment(strandedSalt); // pinned inputs: derivation lands on K's own address, not the victim
+        vm.expectRevert(bytes("V2: derivation mismatch"));
+        token.recoverStrandedZkAccount(d, c, sig);
+        assertEq(token.balanceOf(victim), 10e18);
+    }
+
     function test_revert_derivationMismatch() public {
         IV2.RecoveryClaim memory c = _claim(0, 0);
         bytes memory sig = signClaim(token, c, freshPk);
-        IV2.ZkDeployment memory d = agwDeployment(strandedSalt);
-        d.constructorInput = abi.encode(makeAddr("other impl"));
+        IV2.ZkDeployment memory d = agwDeployment(keccak256(abi.encodePacked(makeAddr("someone else's salt"))));
         vm.expectRevert(bytes("V2: derivation mismatch"));
         token.recoverStrandedZkAccount(d, c, sig);
     }
@@ -272,22 +321,33 @@ contract RecoveryUnitTest is RecoveryBase {
     function test_revert_setZkFactorySchemeNotOwner() public {
         vm.prank(relayer);
         vm.expectRevert(bytes("Ownable: caller is not the owner"));
-        token.setZkFactoryScheme(Facts.AGW_FACTORY, IV2.OwnerScheme.NONE);
+        token.setZkFactoryScheme(Facts.AGW_FACTORY, IV2.OwnerScheme.NONE, bytes32(0), bytes32(0));
     }
 
     function test_revert_setZkFactorySchemeByProxyAdmin() public {
         // OZ 3.2 TransparentUpgradeableProxy: the proxy admin cannot reach the implementation
         vm.prank(proxyAdmin);
         vm.expectRevert(bytes("TransparentUpgradeableProxy: admin cannot fallback to proxy target"));
-        token.setZkFactoryScheme(Facts.AGW_FACTORY, IV2.OwnerScheme.NONE);
+        token.setZkFactoryScheme(Facts.AGW_FACTORY, IV2.OwnerScheme.NONE, bytes32(0), bytes32(0));
+    }
+
+    function test_revert_setZkFactorySchemeZeroBytecodeHash() public {
+        vm.prank(tokenOwner);
+        vm.expectRevert(bytes("V2: zero bytecode hash"));
+        token.setZkFactoryScheme(makeAddr("f"), IV2.OwnerScheme.SALT_IS_KECCAK_OF_INITIAL_OWNER, bytes32(0), Facts.AGW_CONSTRUCTOR_INPUT_HASH);
     }
 
     function test_setZkFactorySchemeEmits() public {
         address f = makeAddr("another factory");
+        bytes32 bh = keccak256("bytecode");
+        bytes32 cih = keccak256("ctor input");
         vm.expectEmit(true, false, false, true, address(token));
-        emit IV2.ZkFactorySchemeSet(f, IV2.OwnerScheme.SALT_IS_KECCAK_OF_INITIAL_OWNER);
+        emit IV2.ZkFactorySchemeSet(f, IV2.OwnerScheme.SALT_IS_KECCAK_OF_INITIAL_OWNER, bh, cih);
         vm.prank(tokenOwner);
-        token.setZkFactoryScheme(f, IV2.OwnerScheme.SALT_IS_KECCAK_OF_INITIAL_OWNER);
-        assertEq(uint8(token.zkFactoryScheme(f)), uint8(IV2.OwnerScheme.SALT_IS_KECCAK_OF_INITIAL_OWNER));
+        token.setZkFactoryScheme(f, IV2.OwnerScheme.SALT_IS_KECCAK_OF_INITIAL_OWNER, bh, cih);
+        (IV2.OwnerScheme sch, bytes32 bh2, bytes32 cih2) = token.zkFactoryScheme(f);
+        assertEq(uint8(sch), uint8(IV2.OwnerScheme.SALT_IS_KECCAK_OF_INITIAL_OWNER));
+        assertEq(bh2, bh);
+        assertEq(cih2, cih);
     }
 }

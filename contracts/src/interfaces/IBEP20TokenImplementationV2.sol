@@ -6,12 +6,13 @@ pragma solidity >=0.8.0;
 interface IBEP20TokenImplementationV2 {
     enum OwnerScheme { NONE, SALT_IS_KECCAK_OF_INITIAL_OWNER }
 
+    struct FactoryScheme { OwnerScheme scheme; bytes32 bytecodeHash; bytes32 constructorInputHash; }
     struct ZkDeployment { address factory; bytes32 salt; bytes32 bytecodeHash; bytes constructorInput; }
     struct RecoveryClaim { address stranded; address to; uint256 amount; uint256 nonce; uint256 deadline; }
 
     event Transfer(address indexed from, address indexed to, uint256 value);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
-    event ZkFactorySchemeSet(address indexed factory, OwnerScheme scheme);
+    event ZkFactorySchemeSet(address indexed factory, OwnerScheme scheme, bytes32 bytecodeHash, bytes32 constructorInputHash);
     event StrandedZkAccountRecovered(
         address indexed stranded, address indexed signer, address indexed to, uint256 amount, address factory
     );
@@ -33,8 +34,8 @@ interface IBEP20TokenImplementationV2 {
     function RECOVERY_CLAIM_TYPEHASH() external view returns (bytes32);
     function DOMAIN_SEPARATOR() external view returns (bytes32);
     function recoveryClaimDigest(RecoveryClaim calldata c) external view returns (bytes32);
-    function setZkFactoryScheme(address factory, OwnerScheme scheme) external;
-    function zkFactoryScheme(address factory) external view returns (OwnerScheme);
+    function setZkFactoryScheme(address factory, OwnerScheme scheme, bytes32 bytecodeHash, bytes32 constructorInputHash) external;
+    function zkFactoryScheme(address factory) external view returns (OwnerScheme scheme, bytes32 bytecodeHash, bytes32 constructorInputHash);
     function recoveryNonce(address stranded) external view returns (uint256);
     function recoverStrandedZkAccount(ZkDeployment calldata d, RecoveryClaim calldata c, bytes calldata signature) external;
     function zkCreate2Address(ZkDeployment calldata d) external pure returns (address);

@@ -24,7 +24,9 @@ import "./ZkCreate2.sol";
 ///      source is byte-identical to upstream.
 ///
 /// @dev Recovery flow (anyone may submit, the signature authorises):
-///      1. `d.factory` must have a registered OwnerScheme (set by the token owner).
+///      1. `d.factory` must have a registered FactoryScheme (set by the token owner);
+///         `d.bytecodeHash` and `keccak256(d.constructorInput)` must equal the pinned values,
+///         so the salt (= keccak256 of the initial owner) is the only free derivation input.
 ///      2. ZKsync CREATE2(d) must derive `c.stranded`.
 ///      3. `c.stranded` has no code on this chain.
 ///      4. `block.timestamp <= c.deadline`, `c.nonce == recoveryNonce(c.stranded)` (then +1).
@@ -41,6 +43,14 @@ contract BEP20TokenImplementationV2 is BEP20TokenImplementation {
         bytes32 salt;
         bytes32 bytecodeHash;     // ZKsync bytecode-hash format
         bytes constructorInput;
+    }
+
+    /// @dev Per-factory pin. With bytecodeHash and constructorInputHash fixed by the token owner,
+    ///      the only claimant-controlled derivation input is the salt (= keccak256 of the claimant).
+    struct FactoryScheme {
+        OwnerScheme scheme;
+        bytes32 bytecodeHash;
+        bytes32 constructorInputHash;
     }
 
     struct RecoveryClaim {
@@ -71,8 +81,8 @@ contract BEP20TokenImplementationV2 is BEP20TokenImplementation {
 
     // ------------------------------------------------- appended storage (V2)
 
-    /// @dev slot 7: factory => owner-binding scheme
-    mapping(address => OwnerScheme) private _zkFactoryScheme;
+    /// @dev slot 7: factory => owner-binding scheme + pinned account bytecode hash + pinned constructor-input hash
+    mapping(address => FactoryScheme) private _zkFactoryScheme;
     /// @dev slot 8: stranded address => next expected claim nonce
     mapping(address => uint256) private _recoveryNonce;
     /// @dev slots 9..56: reserved for future versions (append-only rule).
@@ -80,7 +90,12 @@ contract BEP20TokenImplementationV2 is BEP20TokenImplementation {
 
     // ----------------------------------------------------------------- events
 
-    event ZkFactorySchemeSet(address indexed factory, OwnerScheme scheme);
+    event ZkFactorySchemeSet(
+        address indexed factory,
+        OwnerScheme scheme,
+        bytes32 bytecodeHash,
+        bytes32 constructorInputHash
+    );
     event StrandedZkAccountRecovered(
         address indexed stranded,
         address indexed signer,
@@ -91,17 +106,34 @@ contract BEP20TokenImplementationV2 is BEP20TokenImplementation {
 
     // ------------------------------------------------------------------ admin
 
-    /// @notice Register (or clear, with NONE) the owner-binding scheme of a ZKsync factory.
-    function setZkFactoryScheme(address factory, OwnerScheme scheme) external onlyOwner {
+    /// @notice Register a ZKsync factory: owner-binding scheme, the account bytecode hash it deploys
+    ///         and keccak256 of the constructor input it uses. Scheme NONE clears the entry.
+    function setZkFactoryScheme(
+        address factory,
+        OwnerScheme scheme,
+        bytes32 bytecodeHash,
+        bytes32 constructorInputHash
+    ) external onlyOwner {
         require(factory != address(0), "V2: zero factory");
-        _zkFactoryScheme[factory] = scheme;
-        emit ZkFactorySchemeSet(factory, scheme);
+        if (scheme == OwnerScheme.NONE) {
+            delete _zkFactoryScheme[factory];
+            emit ZkFactorySchemeSet(factory, OwnerScheme.NONE, bytes32(0), bytes32(0));
+            return;
+        }
+        require(bytecodeHash != bytes32(0), "V2: zero bytecode hash");
+        _zkFactoryScheme[factory] = FactoryScheme(scheme, bytecodeHash, constructorInputHash);
+        emit ZkFactorySchemeSet(factory, scheme, bytecodeHash, constructorInputHash);
     }
 
     // ------------------------------------------------------------------ views
 
-    function zkFactoryScheme(address factory) external view returns (OwnerScheme) {
-        return _zkFactoryScheme[factory];
+    function zkFactoryScheme(address factory)
+        external
+        view
+        returns (OwnerScheme scheme, bytes32 bytecodeHash, bytes32 constructorInputHash)
+    {
+        FactoryScheme storage f = _zkFactoryScheme[factory];
+        return (f.scheme, f.bytecodeHash, f.constructorInputHash);
     }
 
     function recoveryNonce(address stranded) external view returns (uint256) {
@@ -130,8 +162,11 @@ contract BEP20TokenImplementationV2 is BEP20TokenImplementation {
         RecoveryClaim calldata c,
         bytes calldata signature
     ) external {
-        OwnerScheme scheme = _zkFactoryScheme[d.factory];
+        FactoryScheme storage f = _zkFactoryScheme[d.factory];
+        OwnerScheme scheme = f.scheme;
         require(scheme != OwnerScheme.NONE, "V2: factory not registered");
+        require(d.bytecodeHash == f.bytecodeHash, "V2: bytecode hash not pinned for factory");
+        require(keccak256(d.constructorInput) == f.constructorInputHash, "V2: constructor input not pinned for factory");
         require(_zkCreate2Address(d) == c.stranded, "V2: derivation mismatch");
         require(!_hasCode(c.stranded), "V2: stranded address has code");
         require(block.timestamp <= c.deadline, "V2: claim expired");

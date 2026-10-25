@@ -28,6 +28,24 @@ abstract contract RecoveryBase is Test {
         return deployCode(V2_ARTIFACT);
     }
 
+    /// @dev Register the AGW factory with the real pinned values (bytecode hash + constructor-input hash).
+    function registerAgw(IV2 token, address tokenOwner) internal {
+        vm.prank(tokenOwner);
+        token.setZkFactoryScheme(
+            Facts.AGW_FACTORY,
+            IV2.OwnerScheme.SALT_IS_KECCAK_OF_INITIAL_OWNER,
+            Facts.AGW_BYTECODE_HASH,
+            Facts.AGW_CONSTRUCTOR_INPUT_HASH
+        );
+    }
+
+    function assertAgwRegistered(IV2 token) internal view {
+        (IV2.OwnerScheme sch, bytes32 bh, bytes32 cih) = token.zkFactoryScheme(Facts.AGW_FACTORY);
+        assertEq(uint8(sch), uint8(IV2.OwnerScheme.SALT_IS_KECCAK_OF_INITIAL_OWNER));
+        assertEq(bh, Facts.AGW_BYTECODE_HASH);
+        assertEq(cih, Facts.AGW_CONSTRUCTOR_INPUT_HASH);
+    }
+
     function agwDeployment(bytes32 salt) internal pure returns (IV2.ZkDeployment memory d) {
         d = IV2.ZkDeployment({
             factory: Facts.AGW_FACTORY,

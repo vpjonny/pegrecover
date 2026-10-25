@@ -8,6 +8,8 @@ library Facts {
     address internal constant AGW_FACTORY = 0x9B947df68D35281C972511B3E7BC875926f26C1A;
     bytes32 internal constant AGW_BYTECODE_HASH = 0x0100003316a98e88b9e8931575675eed8e30eee97abeff3816fb98333ab085bc;
     address internal constant AGW_IMPL = 0xaA3633B417483F932969edAef7CC4f1068f6Faa9;
+    /// @dev keccak256(abi.encode(AGW_IMPL)); the BEP writer measured the 0x7dc432c8 prefix, tests assert the full value.
+    bytes32 internal constant AGW_CONSTRUCTOR_INPUT_HASH = 0x7dc432c80a70eef32157607a2f46e38cf1d957673706133ced678b80fcbf7ca2;
 
     // Case A: the stranded account
     address internal constant CASE_A_OWNER = 0x07C65fE9f29A86B937604Fa8d20a3FAE19d7BE48;

@@ -54,7 +54,10 @@ contract ForkTest is RecoveryBase {
         assertEq(usdc.balanceOf(Facts.CASE_A_ADDR), Facts.CASE_A_BALANCE);
 
         // V2 state starts clean
-        assertEq(uint8(usdc.zkFactoryScheme(Facts.AGW_FACTORY)), uint8(IV2.OwnerScheme.NONE));
+        (IV2.OwnerScheme sch, bytes32 bh, bytes32 cih) = usdc.zkFactoryScheme(Facts.AGW_FACTORY);
+        assertEq(uint8(sch), uint8(IV2.OwnerScheme.NONE));
+        assertEq(bh, bytes32(0));
+        assertEq(cih, bytes32(0));
         assertEq(usdc.recoveryNonce(Facts.CASE_A_ADDR), 0);
         assertEq(usdc.zkCreate2Address(agwDeployment(Facts.CASE_A_SALT)), Facts.CASE_A_ADDR);
     }
@@ -71,13 +74,15 @@ contract ForkTest is RecoveryBase {
         _upgradeToV2();
         vm.prank(relayer);
         vm.expectRevert(bytes("Ownable: caller is not the owner"));
-        usdc.setZkFactoryScheme(Facts.AGW_FACTORY, IV2.OwnerScheme.SALT_IS_KECCAK_OF_INITIAL_OWNER);
+        usdc.setZkFactoryScheme(
+            Facts.AGW_FACTORY, IV2.OwnerScheme.SALT_IS_KECCAK_OF_INITIAL_OWNER, Facts.AGW_BYTECODE_HASH, Facts.AGW_CONSTRUCTOR_INPUT_HASH
+        );
     }
 
     function test_fork_recoverFreshAgwAddress() public {
         _upgradeToV2();
-        vm.prank(Facts.BSC_USDC_OWNER);
-        usdc.setZkFactoryScheme(Facts.AGW_FACTORY, IV2.OwnerScheme.SALT_IS_KECCAK_OF_INITIAL_OWNER);
+        registerAgw(usdc, Facts.BSC_USDC_OWNER);
+        assertAgwRegistered(usdc);
 
         // a fresh initial-owner key whose AGW-style address we can sign for
         (address freshOwner, uint256 freshPk) = makeAddrAndKey("fresh initial owner on fork");
@@ -119,8 +124,8 @@ contract ForkTest is RecoveryBase {
 
     function test_fork_caseA_randomKeyRejected() public {
         _upgradeToV2();
-        vm.prank(Facts.BSC_USDC_OWNER);
-        usdc.setZkFactoryScheme(Facts.AGW_FACTORY, IV2.OwnerScheme.SALT_IS_KECCAK_OF_INITIAL_OWNER);
+        registerAgw(usdc, Facts.BSC_USDC_OWNER);
+        assertAgwRegistered(usdc);
 
         (, uint256 randomPk) = makeAddrAndKey("not the case A owner");
         IV2.RecoveryClaim memory c = IV2.RecoveryClaim({
@@ -136,9 +141,45 @@ contract ForkTest is RecoveryBase {
     function test_fork_caseA_claimPassesEveryCheckExceptSignature() public {
         // Everything but the initial owner's signature is satisfied for case A on BSC:
         _upgradeToV2();
-        assertEq(usdc.zkCreate2Address(agwDeployment(Facts.CASE_A_SALT)), Facts.CASE_A_ADDR); // derivation
+        registerAgw(usdc, Facts.BSC_USDC_OWNER);
+        IV2.ZkDeployment memory d = agwDeployment(Facts.CASE_A_SALT);
+        (, bytes32 bh, bytes32 cih) = usdc.zkFactoryScheme(Facts.AGW_FACTORY);
+        assertEq(d.bytecodeHash, bh);                                                            // pinned bytecode hash
+        assertEq(keccak256(d.constructorInput), cih);                                            // pinned constructor input
+        assertEq(cih, keccak256(abi.encode(Facts.AGW_IMPL)));
+        assertEq(usdc.zkCreate2Address(d), Facts.CASE_A_ADDR);                                   // derivation
         assertEq(Facts.CASE_A_ADDR.code.length, 0);                                           // no code on BSC
         assertEq(keccak256(abi.encodePacked(Facts.CASE_A_OWNER)), Facts.CASE_A_SALT);         // owner binding
         assertEq(usdc.balanceOf(Facts.CASE_A_ADDR), Facts.CASE_A_BALANCE);                   // funds
+    }
+
+    function test_fork_caseA_wrongBytecodeHashRejected() public {
+        _upgradeToV2();
+        registerAgw(usdc, Facts.BSC_USDC_OWNER);
+        (, uint256 pk) = makeAddrAndKey("any key");
+        IV2.RecoveryClaim memory c = IV2.RecoveryClaim({
+            stranded: Facts.CASE_A_ADDR, to: beneficiary, amount: 0, nonce: 0, deadline: block.timestamp + 7 days
+        });
+        bytes memory sig = signClaim(usdc, c, pk);
+        IV2.ZkDeployment memory d = agwDeployment(Facts.CASE_A_SALT);
+        d.bytecodeHash = keccak256("not the AGW account bytecode");
+        vm.expectRevert(bytes("V2: bytecode hash not pinned for factory"));
+        usdc.recoverStrandedZkAccount(d, c, sig);
+        assertEq(usdc.balanceOf(Facts.CASE_A_ADDR), Facts.CASE_A_BALANCE);
+    }
+
+    function test_fork_caseA_wrongConstructorInputRejected() public {
+        _upgradeToV2();
+        registerAgw(usdc, Facts.BSC_USDC_OWNER);
+        (, uint256 pk) = makeAddrAndKey("any key");
+        IV2.RecoveryClaim memory c = IV2.RecoveryClaim({
+            stranded: Facts.CASE_A_ADDR, to: beneficiary, amount: 0, nonce: 0, deadline: block.timestamp + 7 days
+        });
+        bytes memory sig = signClaim(usdc, c, pk);
+        IV2.ZkDeployment memory d = agwDeployment(Facts.CASE_A_SALT);
+        d.constructorInput = abi.encode(makeAddr("not the AGW impl"));
+        vm.expectRevert(bytes("V2: constructor input not pinned for factory"));
+        usdc.recoverStrandedZkAccount(d, c, sig);
+        assertEq(usdc.balanceOf(Facts.CASE_A_ADDR), Facts.CASE_A_BALANCE);
     }
 }
