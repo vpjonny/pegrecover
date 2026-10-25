@@ -13,8 +13,8 @@ Worked case: BSC tx `0x512b66bef7392f9d1dd8fc3a9ee9234bd87dfdb7b0cd5c0395010f657
 ### Files
 
 - `BEPs/BEP-XXX-zk-stranded-token-recovery.md` — the draft.
-- Reference implementation and tests: `contracts/` in the companion repository (`pegrecover`), built on the vendored `bnb-chain/canonical-upgradeable-bep20` sources. URL to be added when published.
-- Case file for the worked example: `PROOF-PACK-0x6ae0.md` in the companion repository.
+- Reference implementation and tests: <https://github.com/vpjonny/pegrecover/tree/master/contracts>, built on the vendored `bnb-chain/canonical-upgradeable-bep20` sources; 70 tests incl. BSC mainnet fork upgrade tests, plus an independent review (`contracts/REVIEW.md`).
+- Case file for the worked example: <https://github.com/vpjonny/pegrecover/blob/master/bep/PROOF-PACK-0x6ae0.md>.
 
 ### What to check
 
