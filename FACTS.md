@@ -21,6 +21,7 @@
 - EVM CREATE2 keccak(0xff ++ factory ++ salt ++ bytecodeHash-as-initcodehash) with case A inputs -> 0xbe2b2ffe38b18b1094c1cc24126ac140530f8d4f (so no EVM deployment reproduces the address)
 - Factory/impl/validator were themselves deployed via ZKsync system Create2Factory 0x0000000000000000000000000000000000010000, salt 0 (factory bytecodeHash 0x010001b5d7006960c2...). Same three contracts exist byte-identical on zkSync Era (chain 324) at the same addresses; simulating the case-A deployAccount calldata on Era returns 0x6ae0145e... Sophon (50104), Lens (232), Cronos zkEVM (388), zkLink Nova (810180) run the ZK deployer (code at 0x8006) but lack the factory.
 - AGW SDK (github.com/Abstract-Foundation/agw-sdk) VALID_CHAINS = {abstract 2741, abstractTestnet 11124, zksync 324, zksyncSepolia 300}; txs are ZKsync EIP-712 type 0x71. wallet_switchEthereumChain to other chains throws "Chain N not supported".
+- Factory ENFORCES salt == keccak(initialOwner): on Era, deployAccount(original initializer, other salt) reverts with custom error 0x8b3152e6 (name unmeasured); original salt returns 0x6ae0... (eth_call, 2026-10-26)
 - Ownership caveat: AGW k1 owner can be changed after deployment; the salt binds only the INITIAL owner. The initial owner of case A is 0x07c65fe9...; current owner on Abstract not read (unmeasured).
 
 ## Context

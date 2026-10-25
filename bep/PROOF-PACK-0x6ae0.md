@@ -160,10 +160,13 @@ EIP-712 values for this token: domain `name = "USD Coin"`, `version = "1"`, `cha
 - Bounty for this recovery: x.com/eth_apple/status/2114351107086647600, 2026-10-25 13:39 UTC, $15,000.
 - Number of other Binance-Peg balances stranded at ZK-derived addresses on BSC: **unmeasured**.
 
-## 13. Unmeasured items
+## 13. Factory enforcement (measured 2026-10-26)
+
+On zkSync Era, where the same `AccountFactory` code is deployed at the same address, `eth_call` of `deployAccount` with the case's initializer and its original salt returns `0x6ae0145e60b073e8c47b922f16c0f9e71e3efa86`; the same initializer with any other salt (`keccak256(0x11…11)`, `0x00…00`) reverts with custom error selector `0x8b3152e6`. The factory, not only the wallet software, binds the salt to the initial owner.
+
+## 14. Unmeasured items
 
 - Current k1 owner of the AGW on Abstract (only the initial owner `0x07c65fe9…be48` is proven by the address).
 - Whether the holder can sign arbitrary EIP-712 messages with `0x07c65fe9…be48`.
-- Whether `AccountFactory` enforces `salt == keccak256(initialOwner)` on-chain, or only the SDK computes it so.
-- Origin of the 0.0014 BNB at `0x6ae0…fa86` on BSC; BNB balance of `0x07c65fe9…be48` on BSC.
+- Origin of the 0.0014 BNB at `0x6ae0…fa86` on BSC. (Measured 2026-10-25: `0x07c65fe9…be48` holds 0.001 BNB on BSC, nonce 0, zero Binance-Peg USDC.)
 - Total count and value of the loss class on BSC.
